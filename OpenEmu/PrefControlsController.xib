@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="17506" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES">
+<document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="21179.7" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES">
     <dependencies>
         <deployment identifier="macosx"/>
-        <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="17506"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="21179.7"/>
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
     <objects>
@@ -99,7 +99,7 @@
                             </userDefinedRuntimeAttributes>
                         </textField>
                         <popUpButton verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="9" customClass="ControlsPopUpButton" customModule="OpenEmu" customModuleProvider="target">
-                            <rect key="frame" x="53" y="9" width="164" height="27"/>
+                            <rect key="frame" x="52" y="8" width="166" height="28"/>
                             <constraints>
                                 <constraint firstAttribute="height" constant="23" id="lww-pM-fVv"/>
                             </constraints>
@@ -144,7 +144,7 @@
             <userDefinedRuntimeAttributes>
                 <userDefinedRuntimeAttribute type="image" keyPath="image" value="controls_background"/>
             </userDefinedRuntimeAttributes>
-            <point key="canvasLocation" x="-211" y="121"/>
+            <point key="canvasLocation" x="-211.5" y="121"/>
         </view>
     </objects>
     <resources>
