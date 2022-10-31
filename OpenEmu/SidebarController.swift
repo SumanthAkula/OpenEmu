@@ -589,8 +589,8 @@ extension SidebarController: NSMenuDelegate {
             menuItem.representedObject = item
             menu.addItem(menuItem)
             
-            if let cores = OECorePlugin.corePlugins(forSystemIdentifier: item.systemIdentifier),
-               cores.count > 1 {
+            let cores = OECorePlugin.corePlugins(forSystemIdentifier: item.systemIdentifier)
+            if cores.count > 1 {
                 
                 let systemIdentifier = item.systemIdentifier
                 let defaultCoreKey = "defaultCore.\(systemIdentifier)"
@@ -606,7 +606,7 @@ extension SidebarController: NSMenuDelegate {
                     let coreIdentifier = core.bundleIdentifier
                     
                     let item = NSMenuItem()
-                    item.title = coreName ?? ""
+                    item.title = coreName
                     item.action = #selector(changeDefaultCore(_:))
                     item.state = coreIdentifier == defaultCoreIdentifier ? .on : .off
                     item.representedObject = ["core": coreIdentifier,

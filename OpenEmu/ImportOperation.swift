@@ -24,6 +24,7 @@
 
 import Foundation
 import OpenEmuKit
+import OpenEmuSystem
 import XADMaster
 
 let OECopyToLibraryKey        = "copyToLibrary"
@@ -51,8 +52,7 @@ enum OEImportErrorCode: Int {
 
 typealias ImportItemCompletionBlock = (NSManagedObjectID?) -> Void
 
-@objc(OEImportOperation) // compatibility with old keyed archives (Import Queue.db)
-final class ImportOperation: Operation, NSSecureCoding, NSCopying {
+final class ImportOperation: Operation, NSCopying {
     
     enum ExitStatus {
         case none, errorResolvable, errorFatal, success
@@ -109,33 +109,13 @@ final class ImportOperation: Operation, NSSecureCoding, NSCopying {
         }
     }
     
-    // MARK: - NS(Secure)Coding
-    
-    static var supportsSecureCoding: Bool { true }
-    
-    required init?(coder: NSCoder) {
-        guard
-            let url = coder.decodeObject(of: NSURL.self, forKey: "URL") as? URL,
-            let sourceURL = coder.decodeObject(of: NSURL.self, forKey: "sourceURL") as? URL
-        else { return nil }
-        
+    init(url: URL, sourceURL: URL) {
         self.url = url
         self.sourceURL = sourceURL
         super.init()
-    }
-    
-    func encode(with coder: NSCoder) {
-        coder.encode(url, forKey: "URL")
-        coder.encode(sourceURL, forKey: "sourceURL")
     }
     
     // MARK: - NSCopying
-    
-    private init(url: URL, sourceURL: URL) {
-        self.url = url
-        self.sourceURL = sourceURL
-        super.init()
-    }
     
     func copy(with zone: NSZone? = nil) -> Any {
         let op = ImportOperation(url: url, sourceURL: sourceURL)
@@ -187,6 +167,13 @@ final class ImportOperation: Operation, NSSecureCoding, NSCopying {
             DLog("Item is hidden file or package directory at \(url)")
             // Check for .oesavestate files and copy them directly (not going through importer queue)
             Self.tryImportSaveState(at: url)
+            
+            do {
+                try PluginDocument.importCorePlugin(at: url)
+                try PluginDocument.importSystemPlugin(at: url)
+            } catch {
+                NSApp.presentError(error)
+            }
             
             return nil
         }
@@ -249,8 +236,7 @@ final class ImportOperation: Operation, NSSecureCoding, NSCopying {
         
         let fileManager = FileManager.default
         let filename = (url.lastPathComponent as NSString).deletingPathExtension
-        let shadersPath = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("OpenEmu", isDirectory: true)
+        let shadersPath = URL.oeApplicationSupportDirectory
             .appendingPathComponent("Shaders", isDirectory: true)
         let destination = shadersPath.appendingPathComponent(filename, isDirectory: true)
         
@@ -263,7 +249,7 @@ final class ImportOperation: Operation, NSSecureCoding, NSCopying {
         if fileManager.fileExists(atPath: destination.path) {
             // lets remove it first
             do {
-                try fileManager.removeItem(at: destination)
+                try fileManager.trashItem(at: destination, resultingItemURL: nil)
             } catch {
                 os_log(.error, log: .import, "Could not remove existing directory '%{public}@' before copying shader: %{public}@", destination.path, error.localizedDescription)
                 return .notHandled
@@ -370,7 +356,7 @@ final class ImportOperation: Operation, NSSecureCoding, NSCopying {
         let pathExtension = url.pathExtension.lowercased()
         
         // Ignore unsupported file extensions
-        var validExtensions = Set(OESystemPlugin.supportedTypeExtensions() as! [String])
+        var validExtensions = OESystemPlugin.supportedTypeExtensions
         
         // Hack fix for #2031
         // TODO: Build set for extensions from all BIOS file types?
@@ -514,7 +500,7 @@ final class ImportOperation: Operation, NSSecureCoding, NSCopying {
             if system.systemIdentifier == "openemu.system.arcade" {
                 continue
             }
-            if let extensions = system.plugin?.supportedTypeExtensions() as? [String] {
+            if let extensions = system.plugin?.supportedTypeExtensions {
                 enabledExtensions.formUnion(extensions)
             }
         }

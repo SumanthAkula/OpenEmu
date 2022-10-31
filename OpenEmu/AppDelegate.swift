@@ -120,8 +120,9 @@ class AppDelegate: NSObject {
         super.init()
 
         // Get the game library path.
-        let supportDirectoryURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).last!
-        let path = (supportDirectoryURL.appendingPathComponent("OpenEmu/Game Library").path as NSString).abbreviatingWithTildeInPath
+        let libraryDirectory = URL.oeApplicationSupportDirectory
+            .appendingPathComponent("Game Library", isDirectory: true)
+        let path = (libraryDirectory.path as NSString).abbreviatingWithTildeInPath
         
         // Register defaults.
         UserDefaults.standard.register(defaults: [
@@ -210,6 +211,7 @@ class AppDelegate: NSObject {
             assert(OELibraryDatabase.default != nil, "No database available!")
             
             DispatchQueue.main.async {
+                self.libraryDatabaseDidLoad()
                 NotificationCenter.default.post(name: .libraryDidLoad, object: OELibraryDatabase.default!)
             }
             
@@ -390,7 +392,7 @@ class AppDelegate: NSObject {
         // Remove save states for deprecated core plugins.
         // Get incompatible save states by version.
         // Genesis Plus GX is especially known for breaking compatibility.
-        let currentDesmumeCoreVersion = OECorePlugin(bundleIdentifier: "org.openemu.desmume")?.version
+        let currentDesmumeCoreVersion = OECorePlugin.corePlugin(bundleIdentifier: "org.openemu.desmume")?.version
         let incompatibleSaveStates = (OEDBSaveState.allObjects(in: context) as! [OEDBSaveState]).filter {
             ($0.coreIdentifier == "org.openemu.CrabEmu" &&
                 ($0.location.contains("GameGear/") ||
@@ -793,7 +795,6 @@ extension AppDelegate: NSMenuDelegate {
         
         let notificationCenter = NotificationCenter.default
         
-        notificationCenter.addObserver(self, selector: #selector(libraryDatabaseDidLoad), name: .libraryDidLoad, object: nil)
         notificationCenter.addObserver(self, selector: #selector(openPreferencePane), name: PreferencesWindowController.openPaneNotificationName, object: nil)
         
         notificationCenter.addObserver(self, selector: #selector(didRepairBindings), name: .OEBindingsRepaired, object: nil)
@@ -822,7 +823,7 @@ extension AppDelegate: NSMenuDelegate {
         }
     }
     
-    func libraryDatabaseDidLoad(notification: Notification) {
+    func libraryDatabaseDidLoad() {
         
         libraryLoaded = true
 

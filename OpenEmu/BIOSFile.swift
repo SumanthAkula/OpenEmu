@@ -37,9 +37,7 @@ extension Notification.Name {
 /// Detects and imports BIOS files.
 enum BIOSFile {
     
-    static let biosFolderURL = FileManager.default.urls(for: .applicationSupportDirectory,
-                                                        in: .userDomainMask).first!
-                                .appendingPathComponent("OpenEmu", isDirectory: true)
+    static let biosFolderURL = URL.oeApplicationSupportDirectory
                                 .appendingPathComponent("BIOS", isDirectory: true)
     
     // MARK: - File Handling
@@ -160,7 +158,7 @@ enum BIOSFile {
         let fileManager = FileManager.default
         
         // Copy known BIOS/system files to BIOS folder.
-        for validFile in OECorePlugin.requiredFiles() as! [[String: Any]] {
+        for validFile in OECorePlugin.requiredFiles {
             
             let biosSystemFilename = validFile["Name"] as! String
             let biosSystemFileMD5 = validFile["MD5"] as! String

@@ -25,6 +25,7 @@
 import Foundation
 import OpenEmuKit
 import Sparkle.SUStandardVersionComparator
+import OSLog
 
 final class CoreUpdater: NSObject {
     
@@ -85,13 +86,9 @@ final class CoreUpdater: NSObject {
     
     private func checkForUpdateInformation(url: URL, plugin: OECorePlugin) throws -> CoreAppcastItem? {
         let items: [XMLElement]
-        do {
-            let appcast = try XMLDocument(contentsOf: url, options: [])
-            items = try appcast.nodes(forXPath: "/rss/channel/item") as! [XMLElement]
-        } catch {
-            throw error
-        }
-        
+        let appcast = try XMLDocument(contentsOf: url, options: [])
+        items = try appcast.nodes(forXPath: "/rss/channel/item") as! [XMLElement]
+
         for item in items {
             if let enclosure = item.elements(forName: "enclosure").first,
                let fileURL = enclosure.attribute(forName: "url")?.stringValue,
@@ -111,6 +108,10 @@ final class CoreUpdater: NSObject {
     }
     
     func checkForUpdatesAndInstall() {
+        guard ProcessInfo.processInfo.environment["OE_DISABLE_UPDATE_CHECK"] == nil else {
+            os_log(.info, log: .default, "OE_DISABLE_UPDATE_CHECK found; skipping check for updates.")
+            return
+        }
         autoInstall = true
         checkForUpdates()
     }
@@ -348,7 +349,7 @@ final class CoreUpdater: NSObject {
     func failInstallWithError(_ error: Error?) {
         alert?.close(withResult: .alertFirstButtonReturn)
         
-        completionHandler?(OECorePlugin(bundleIdentifier: coreIdentifier), error)
+        completionHandler?(OECorePlugin.corePlugin(bundleIdentifier: coreIdentifier!), error)
         
         alert = nil
         coreIdentifier = nil
@@ -358,7 +359,7 @@ final class CoreUpdater: NSObject {
     func finishInstall() {
         alert?.close(withResult: .alertFirstButtonReturn)
         
-        completionHandler?(OECorePlugin(bundleIdentifier: coreIdentifier), nil)
+        completionHandler?(OECorePlugin.corePlugin(bundleIdentifier: coreIdentifier!), nil)
         
         alert = nil
         coreIdentifier = nil
@@ -458,13 +459,9 @@ private final class CoreAppcast {
     func fetch(completionHandler handler: (() -> Void)? = nil) throws {
         
         let items: [XMLElement]
-        do {
-            let appcast = try XMLDocument(contentsOf: url, options: [])
-            items = try appcast.nodes(forXPath: "/rss/channel/item") as! [XMLElement]
-        } catch {
-            throw error
-        }
-        
+        let appcast = try XMLDocument(contentsOf: url, options: [])
+        items = try appcast.nodes(forXPath: "/rss/channel/item") as! [XMLElement]
+
         for item in items {
             if let enclosure = item.elements(forName: "enclosure").first,
                let fileURL = enclosure.attribute(forName: "url")?.stringValue,

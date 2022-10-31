@@ -82,8 +82,8 @@ final class CoreDownload: NSObject {
         
         var systemNames: [String] = []
         for systemIdentifier in plugin.systemIdentifiers {
-            if let plugin = OESystemPlugin(forIdentifier: systemIdentifier),
-               let systemName = plugin.systemName {
+            if let plugin = OESystemPlugin.systemPlugin(forIdentifier: systemIdentifier) {
+               let systemName = plugin.systemName
                 systemNames.append(systemName)
             }
         }
@@ -127,26 +127,18 @@ extension CoreDownload: URLSessionDownloadDelegate {
         
         DLog("Core download (\(session.sessionDescription ?? "")) did finish downloading temporary data.")
         
-        let urls = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-        let baseURL: URL
-        if !urls.isEmpty {
-            baseURL = urls.first!
-        } else {
-            baseURL = FileManager.default.temporaryDirectory
-        }
-        var coresFolder = baseURL
-        coresFolder.appendPathComponent("OpenEmu", isDirectory: true)
-        coresFolder.appendPathComponent("Cores", isDirectory: true)
+        let coresFolder = URL.oeApplicationSupportDirectory
+            .appendingPathComponent("Cores", isDirectory: true)
         
         guard
             let fileName = ArchiveHelper.decompressFileInArchive(at: location, toDirectory: coresFolder)
         else { return }
         
-        let fullPluginPath = coresFolder.appendingPathComponent(fileName).path
+        let fullPluginURL = coresFolder.appendingPathComponent(fileName)
         
         DLog("Core (\(bundleIdentifier)) extracted to application support folder.")
         
-        guard let plugin = OECorePlugin(bundleAtPath: fullPluginPath) else {
+        guard let plugin = OECorePlugin.corePlugin(bundleAtURL: fullPluginURL) else {
             return assertionFailure()
         }
         

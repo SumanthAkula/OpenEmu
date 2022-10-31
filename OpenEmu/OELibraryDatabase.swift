@@ -322,7 +322,7 @@ final class OELibraryDatabase: NSObject {
                 return
             }
         }
-        return result?.first as? OEDBRom
+        return result?.first
     }
     
     var lastPlayedRoms: [OEDBRom] {
@@ -525,12 +525,8 @@ final class OELibraryDatabase: NSObject {
         }
         
         let saveStateFolderName = "Save States"
-        var result = try! FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
-        result.appendPathComponent("OpenEmu", isDirectory: true)
-        result.appendPathComponent(saveStateFolderName, isDirectory: true)
-        
-        // In case one of the appended components is a symlink.
-        result.resolveSymlinksInPath()
+        let result = URL.oeApplicationSupportDirectory.appendingPathComponent(saveStateFolderName, isDirectory: true)
+            .resolvingSymlinksInPath() // In case one of the appended components is a symlink.
         
         // try? FileManager.default.createDirectory(at: result, withIntermediateDirectories: true)
         
@@ -569,9 +565,7 @@ final class OELibraryDatabase: NSObject {
         }
         
         let screenshotFolderName = "Screenshots"
-        var result = try! FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
-        result.appendPathComponent("OpenEmu", isDirectory: true)
-        result.appendPathComponent(screenshotFolderName, isDirectory: true)
+        let result = URL.oeApplicationSupportDirectory.appendingPathComponent(screenshotFolderName, isDirectory: true)
         
         try? FileManager.default.createDirectory(at: result, withIntermediateDirectories: true)
         
@@ -587,7 +581,7 @@ final class OELibraryDatabase: NSObject {
     }
     
     var importQueueURL: URL {
-        return databaseFolderURL.appendingPathComponent("Import Queue.db", isDirectory: false)
+        return databaseFolderURL.appendingPathComponent("ImportQueue.plist", isDirectory: false)
     }
     
     // MARK: - OpenVGDB Sync

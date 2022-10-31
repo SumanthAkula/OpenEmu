@@ -154,9 +154,8 @@ final class OEGameDocument: NSDocument {
     /// Indicates whether the document is currently moving from the main window into a separate popout window.
     private var isUndocking = false
     
-    private var romPath: String?
-    /// Track if ROM was decompressed.
-    private var romDecompressed = false
+    /// Non-nil if ROM was decompressed.
+    private var decompressedROMFileURL: URL?
     
     var coreIdentifier: String! {
         return gameCoreManager.plugin?.bundleIdentifier
@@ -259,7 +258,7 @@ final class OEGameDocument: NSDocument {
     
     private func setUpDocument(with saveState: OEDBSaveState) throws {
         do {
-            try setUpDocument(with: saveState.rom!, using: OECorePlugin(bundleIdentifier: saveState.coreIdentifier))
+            try setUpDocument(with: saveState.rom!, using: OECorePlugin.corePlugin(bundleIdentifier: saveState.coreIdentifier))
             saveStateForGameStart = saveState
         } catch {
             throw error
@@ -589,8 +588,8 @@ final class OEGameDocument: NSDocument {
         checkGlitches()
         
         gameCoreManager.loadROM(completionHandler: {
-            self.gameCoreManager.setupEmulation() { result in
-                self.gameViewController.setScreenSize(result.screenSize, aspectSize: result.aspectSize)
+            self.gameCoreManager.setupEmulation() { screenSize, aspectSize in
+                self.gameViewController.setScreenSize(screenSize, aspectSize: aspectSize)
                 
                 DLog("SETUP DONE.")
                 self.emulationStatus = .setup
@@ -620,9 +619,8 @@ final class OEGameDocument: NSDocument {
             }
         }, errorHandler: { error in
             self.emulationStatus = .notSetup
-            if self.romDecompressed,
-               let romPath = self.romPath {
-                try? FileManager.default.removeItem(atPath: romPath)
+            if let url = self.decompressedROMFileURL {
+                try? FileManager.default.removeItem(at: url)
             }
             OEBindingsController.default.systemBindings(for: self.systemPlugin.controller).remove(self)
             self.gameCoreManager = nil
@@ -666,35 +664,36 @@ final class OEGameDocument: NSDocument {
     private func newGameCoreManager(with corePlugin: OECorePlugin) -> GameCoreManager {
         self.corePlugin = corePlugin
         
-        var path = romFileURL.path
         let lastDisplayModeInfo = UserDefaults.standard.object(forKey: String(format: OEGameCoreDisplayModeKeyFormat, corePlugin.bundleIdentifier)) as? [String : Any]
         
-        let index = rom.archiveFileIndex as? Int ?? 0
-        
-        // Never extract arcade roms and .md roms (XADMaster identifies some as LZMA archives)
-        let ext = romFileURL.pathExtension.lowercased()
+        let romURL: URL
         if systemPlugin.systemIdentifier != "openemu.system.arcade",
-           ext != "md", ext != "nds", ext != "iso" {
-            var romDecompressed = ObjCBool(romDecompressed)
-            let decomprDst = ArchiveHelper.decompressFileInArchive(at: romFileURL, atIndex: index, withHash: rom.md5, didDecompress: &romDecompressed)
-            path = decomprDst?.path ?? romFileURL.path
-            self.romDecompressed = romDecompressed.boolValue
-            romPath = path
+           let index = rom.archiveFileIndex as? Int
+        {
+            var didDecompress = ObjCBool(false)
+            let decomprDst = ArchiveHelper.decompressFileInArchive(at: romFileURL, atIndex: index, withHash: rom.md5, didDecompress: &didDecompress)
+            if didDecompress.boolValue {
+                // if we decompressed it, we should clean it up
+                decompressedROMFileURL = decomprDst
+            }
+            romURL = decomprDst ?? romFileURL
+        } else {
+            romURL = romFileURL
         }
         
         let preset = ShaderControl.currentPreset(forSystemPlugin: systemPlugin)
         let params = preset.parameters
         
-        let info = OEGameStartupInfo(romPath: path,
+        let info = OEGameStartupInfo(romURL: romURL,
                                      romMD5: rom.md5 ?? "",
                                      romHeader: rom.header ?? "",
                                      romSerial: rom.serial ?? "",
                                      systemRegion: OELocalizationHelper.shared.regionName,
                                      displayModeInfo: lastDisplayModeInfo,
-                                     shader: preset.shader.url,
-                                     shaderParameters: params as [String : NSNumber],
-                                     corePluginPath: corePlugin.path,
-                                     systemPluginPath: systemPlugin.path)
+                                     shaderURL: preset.shader.url,
+                                     shaderParameters: params,
+                                     corePluginURL: corePlugin.url,
+                                     systemPluginURL: systemPlugin.url)
         
         if let managerClassName = UserDefaults.standard.string(forKey: OEGameCoreManagerModePreferenceKey),
            let managerClass = NSClassFromString(managerClassName),
@@ -706,8 +705,8 @@ final class OEGameDocument: NSDocument {
     }
     
     private func core(forSystem system: OESystemPlugin) throws -> OECorePlugin {
-        let systemIdentifier = system.systemIdentifier!
-        var validPlugins = OECorePlugin.corePlugins(forSystemIdentifier: systemIdentifier)!
+        let systemIdentifier = system.systemIdentifier
+        var validPlugins = OECorePlugin.corePlugins(forSystemIdentifier: systemIdentifier)
         
         if validPlugins.isEmpty {
             throw Errors.noCore
@@ -718,7 +717,7 @@ final class OEGameDocument: NSDocument {
         else {
             let defaults = UserDefaults.standard
             if let coreIdentifier = defaults.string(forKey: "defaultCore.\(systemIdentifier)"),
-               let core = OECorePlugin(bundleIdentifier: coreIdentifier) {
+               let core = OECorePlugin.corePlugin(bundleIdentifier: coreIdentifier) {
                 return core
             } else {
                 validPlugins.sort { $0.displayName.caseInsensitiveCompare($1.displayName) == .orderedAscending }
@@ -754,7 +753,7 @@ final class OEGameDocument: NSDocument {
     private func checkGlitches() -> Bool {
         let OEGameCoreGlitchesKey = OEAlert.OEGameCoreGlitchesSuppressionKey
         let coreName = gameCoreManager.plugin?.controller.pluginName ?? ""
-        let systemIdentifier = systemPlugin.systemIdentifier ?? ""
+        let systemIdentifier = systemPlugin.systemIdentifier
         let systemKey = "\(coreName).\(systemIdentifier)"
         let defaults = UserDefaults.standard
         
@@ -792,22 +791,22 @@ final class OEGameDocument: NSDocument {
         }
         
         let coreName = gameCoreManager.plugin?.controller.pluginName ?? ""
-        let systemIdentifier = systemPlugin.systemIdentifier ?? ""
+        let systemIdentifier = systemPlugin.systemIdentifier
         
-        let removalDate = gameCoreManager.plugin?.infoDictionary?[OEGameCoreSupportDeadlineKey] as? Date
+        let removalDate = gameCoreManager.plugin?.infoDictionary[OEGameCoreSupportDeadlineKey] as? Date
         var deadlineInMoreThanOneMonth = false
         let oneMonth: TimeInterval = 30 * 24 * 60 * 60
         if removalDate == nil || removalDate!.timeIntervalSinceNow > oneMonth {
             deadlineInMoreThanOneMonth = true
         }
         
-        let replacements = gameCoreManager.plugin?.infoDictionary?[OEGameCoreSuggestedReplacement] as? [String : String]
+        let replacements = gameCoreManager.plugin?.infoDictionary[OEGameCoreSuggestedReplacement] as? [String : String]
         let replacement = replacements?[systemIdentifier]
         var replacementName: String?
         var download: CoreDownload?
         
         if let replacement = replacement {
-            if let plugin = OECorePlugin(bundleIdentifier: replacement) {
+            if let plugin = OECorePlugin.corePlugin(bundleIdentifier: replacement) {
                 replacementName = plugin.controller.pluginName
             } else {
                 let repl = CoreUpdater.shared.coreList.firstIndex(where: { $0.bundleIdentifier.caseInsensitiveCompare(replacement) == .orderedSame })
@@ -1353,7 +1352,7 @@ final class OEGameDocument: NSDocument {
             }
         }
         
-        let validExtensions = archivedExtensions + systemPlugin.supportedTypeExtensions() as! [String]
+        let validExtensions = archivedExtensions + systemPlugin.supportedTypeExtensions
         
         let system = rom.game!.system!
         let systemFolder = OELibraryDatabase.default!.romsFolderURL(for: system)
@@ -1655,7 +1654,7 @@ final class OEGameDocument: NSDocument {
             return NSURL(string: UUID().uuidString, relativeTo: temporaryDirectoryURL)!
         } as URL
         
-        gameCoreManager.saveStateToFile(atPath: temporaryStateFileURL.path) { success, error in
+        gameCoreManager.saveStateToFile(at: temporaryStateFileURL) { success, error in
             if !success {
                 NSLog("Could not create save state file at url: \(temporaryStateFileURL)")
                 
@@ -1742,7 +1741,7 @@ final class OEGameDocument: NSDocument {
         }
         
         let loadState: (() -> Void) = {
-            self.gameCoreManager.loadStateFromFile(atPath: state.dataFileURL.path) { success, error in
+            self.gameCoreManager.loadStateFromFile(at: state.dataFileURL) { success, error in
                 if !success {
                     if let error = error {
                         self.presentError(error)
@@ -1779,7 +1778,7 @@ final class OEGameDocument: NSDocument {
         alert.showSuppressionButton(forUDKey: OEAlert.OEAutoSwitchCoreAlertSuppressionKey)
         
         if alert.runModal() == .alertFirstButtonReturn {
-            if let core = OECorePlugin(bundleIdentifier: state.coreIdentifier) {
+            if let core = OECorePlugin.corePlugin(bundleIdentifier: state.coreIdentifier) {
                 runWithCore(core, nil)
             } else {
                 CoreUpdater.shared.installCore(for: state, withCompletionHandler: runWithCore)

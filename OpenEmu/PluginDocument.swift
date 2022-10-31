@@ -25,58 +25,78 @@
 import Cocoa
 import OpenEmuKit
 
+extension OEGameCorePluginError: LocalizedError {
+    
+    public var failureReason: String? {
+        switch self {
+        case .alreadyLoaded:
+            return NSLocalizedString("ERROR_PLUGIN_IMPORT_ALREADYLOADED", comment: "Error, another version of imported plugin is already loaded")
+        case .outOfSupport:
+            return NSLocalizedString("ERROR_PLUGIN_IMPORT_OUTOFSUPPORT", comment: "Error, plugin to be imported is out of support")
+        case .invalid:
+            return nil
+        }
+    }
+    
+    public var recoverySuggestion: String? {
+        switch self {
+        case .alreadyLoaded:
+            return NSLocalizedString("You need to restart the application to commit the change", comment: "")
+        case .outOfSupport,
+             .invalid:
+            return nil
+        }
+    }
+}
+
 final class PluginDocument: NSDocument {
     
     override func read(from url: URL, ofType typeName: String) throws {
         let pathExtension = url.pathExtension.lowercased()
-        if pathExtension == "oeshaderplugin" {
+        switch pathExtension {
+        case "oeshaderplugin":
             ImportOperation.importShaderPlugin(at: url)
+        case OECorePlugin.pluginExtension:
+            try Self.importCorePlugin(at: url)
+        case OESystemPlugin.pluginExtension:
+            try Self.importSystemPlugin(at: url)
+        default:
             return
         }
-        else if pathExtension == OESystemPlugin.pluginExtension {
-            let userInfo = [
-                NSLocalizedFailureReasonErrorKey : NSLocalizedString("Only the built-in system plugins are supported.", comment: ""),
-            ]
-            throw NSError(domain: OEGameCoreErrorDomain, code: OEGameCorePluginErrorCodes.outOfSupportError.rawValue, userInfo: userInfo)
-        }
-        else if pathExtension == OECorePlugin.pluginExtension {
-            let coresDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-                .appendingPathComponent("OpenEmu", isDirectory: true)
-                .appendingPathComponent(OECorePlugin.pluginFolder!, isDirectory: true)
-            let newURL = coresDir.appendingPathComponent(url.lastPathComponent, isDirectory: true)
+    }
+    
+    static func importSystemPlugin(at url: URL) throws {
+        guard url.pathExtension.lowercased() == OESystemPlugin.pluginExtension else { return }
+        // Only the built-in system plugins are supported.
+        throw OEGameCorePluginError.outOfSupport
+    }
+    
+    static func importCorePlugin(at url: URL) throws {
+        guard url.pathExtension.lowercased() == OECorePlugin.pluginExtension else { return }
+        
+        let coresDir = URL.oeApplicationSupportDirectory
+            .appendingPathComponent(OECorePlugin.pluginFolder, isDirectory: true)
+        let newURL = coresDir.appendingPathComponent(url.lastPathComponent, isDirectory: true)
+        
+        // If the file isn’t already in the right place
+        if newURL != url {
+            let fm = FileManager.default
             
-            // If the file isn’t already in the right place
-            if newURL != url {
-                let fm = FileManager.default
-                
-                if fm.fileExists(atPath: newURL.path) {
-                    try fm.removeItem(at: newURL)
-                }
-                if !fm.fileExists(atPath: coresDir.path) {
-                    try fm.createDirectory(at: coresDir, withIntermediateDirectories: true)
-                }
-                try fm.copyItem(at: url, to: newURL)
+            if fm.fileExists(atPath: newURL.path) {
+                try fm.trashItem(at: newURL, resultingItemURL: nil)
             }
+            if !fm.fileExists(atPath: coresDir.path) {
+                try fm.createDirectory(at: coresDir, withIntermediateDirectories: true)
+            }
+            try fm.copyItem(at: url, to: newURL)
             
-            do {
-                try _ = OECorePlugin(bundleAtPath: newURL.path, type: OECorePlugin.self, forceReload: true)
-            } catch let error as NSError {
-                if error.domain == OEGameCoreErrorDomain {
-                    if error.code == OEGameCorePluginErrorCodes.alreadyLoadedError.rawValue {
-                        let userInfo = [
-                            NSLocalizedFailureReasonErrorKey : NSLocalizedString("A version of this plugin is already loaded", comment: ""),
-                            NSLocalizedRecoverySuggestionErrorKey : NSLocalizedString("You need to restart the application to commit the change", comment: ""),
-                        ]
-                        throw NSError(domain: error.domain, code: error.code, userInfo: userInfo)
-                    } else if error.code == OEGameCorePluginErrorCodes.outOfSupportError.rawValue {
-                        let userInfo = [
-                            NSLocalizedFailureReasonErrorKey : NSLocalizedString("This plugin is currently unsupported", comment: ""),
-                        ]
-                        throw NSError(domain: error.domain, code: error.code, userInfo: userInfo)
-                    }
-                }
-                throw error
+            // Remove quarantine attribute to make Gatekeeper happy.
+            // TODO: Remove once core plugins are code-signed?
+            if try fm.hasExtendedAttribute("com.apple.quarantine", at: newURL, traverseLink: true) {
+                try fm.removeExtendedAttribute("com.apple.quarantine", at: newURL, traverseLink: true)
             }
         }
+        
+        try _ = OECorePlugin.plugin(bundleAtURL: newURL, forceReload: true)
     }
 }
